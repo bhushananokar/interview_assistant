@@ -55,7 +55,7 @@ class SkillCardGenerator:
     
     def _get_api_key(self) -> str:
         """Get API key from environment variable."""
-        api_key = "AIzaSyB4YsVZrGEFdBZQzyLvMu0Oae4BlXedlks"
+        api_key = os.getenv('GOOGLE_API_KEY')
         if not api_key:
             logger.warning("GOOGLE_API_KEY environment variable not found.")
         return api_key
