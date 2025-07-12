@@ -1,0 +1,765 @@
+"""
+Main FastAPI application for Interview Assistant
+Direct interview access without authentication
+"""
+import os
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
+from dotenv import load_dotenv
+
+# Import API routers
+from api.interviews import router as interviews_router
+
+# Import database setup
+from database import create_tables
+
+# Load environment variables
+load_dotenv()
+
+# HTML content embedded directly
+HTML_CONTENT = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interview Assistant - Skill Assessment</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #333;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            padding: 40px;
+            max-width: 800px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            color: #4a5568;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #718096;
+            font-size: 1.1em;
+        }
+
+        .start-section {
+            text-align: center;
+            margin: 30px 0;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+            text-align: left;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #4a5568;
+        }
+
+        input, select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e2e8f0;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        input:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        small {
+            color: #718096;
+            font-size: 0.9em;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .question-section {
+            display: none;
+        }
+
+        .question-card {
+            background: #f7fafc;
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 20px;
+            border-left: 5px solid #667eea;
+        }
+
+        .question-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .question-number {
+            background: #667eea;
+            color: white;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-weight: 600;
+        }
+
+        .skill-tag {
+            background: #e2e8f0;
+            color: #4a5568;
+            padding: 5px 12px;
+            border-radius: 15px;
+            font-size: 0.9em;
+            font-weight: 600;
+        }
+
+        .question-text {
+            font-size: 1.1em;
+            line-height: 1.6;
+            margin-bottom: 20px;
+            color: #2d3748;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 120px;
+            padding: 15px;
+            border: 2px solid #e2e8f0;
+            border-radius: 10px;
+            font-size: 16px;
+            resize: vertical;
+            font-family: inherit;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .progress-bar {
+            background: #e2e8f0;
+            height: 8px;
+            border-radius: 4px;
+            margin: 20px 0;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100%;
+            transition: width 0.3s ease;
+        }
+
+        .results-section {
+            display: none;
+            text-align: center;
+        }
+
+        .overall-score {
+            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 20px;
+            margin: 20px 0;
+        }
+
+        .overall-score h2 {
+            margin-bottom: 10px;
+            font-size: 1.5em;
+        }
+
+        .score-display {
+            font-size: 3em;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .stars {
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+
+        .star {
+            color: #ffd700;
+            margin: 0 2px;
+        }
+
+        .star.empty {
+            color: #ddd;
+        }
+
+        .skill-ratings {
+            margin: 30px 0;
+        }
+
+        .skill-ratings h3 {
+            color: #4a5568;
+            margin-bottom: 20px;
+            font-size: 1.3em;
+        }
+
+        .skill-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        .skill-card {
+            background: #f7fafc;
+            padding: 20px;
+            border-radius: 15px;
+            text-align: center;
+            border: 2px solid #e2e8f0;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .skill-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+
+        .skill-name {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #4a5568;
+            margin-bottom: 10px;
+        }
+
+        .skill-stars {
+            font-size: 1.5em;
+            margin-bottom: 5px;
+        }
+
+        .skill-rating-text {
+            color: #718096;
+            font-size: 0.9em;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .spinner {
+            border: 4px solid #e2e8f0;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .evaluation-feedback {
+            background: #edf2f7;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 15px;
+            text-align: left;
+        }
+
+        .feedback-score {
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .feedback-text {
+            color: #4a5568;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>🎯 Interview Assistant</h1>
+            <p>Assess your skills through AI-powered interview questions</p>
+        </div>
+
+        <!-- Start Section -->
+        <div class="start-section" id="startSection">
+            <div class="form-group">
+                <label for="candidateName">Your Name (Optional)</label>
+                <input type="text" id="candidateName" placeholder="Enter your name">
+            </div>
+            
+            <div class="form-group">
+                <label for="skillsInput">Skills to Assess</label>
+                <input type="text" id="skillsInput" placeholder="e.g., Python, Cooking, Project Management" 
+                       value="Python, Cooking, Public Speaking">
+                <small>Enter comma-separated skills you want to be assessed on</small>
+            </div>
+            
+            <div class="form-group">
+                <label for="skillArea">Primary Skill Category</label>
+                <select id="skillArea">
+                    <option value="general">General Skills</option>
+                    <option value="programming">Programming</option>
+                    <option value="data_science">Data Science</option>
+                    <option value="web_development">Web Development</option>
+                    <option value="project_management">Project Management</option>
+                    <option value="cooking">Cooking & Culinary</option>
+                    <option value="arts">Arts & Design</option>
+                    <option value="music">Music</option>
+                    <option value="sports">Sports & Fitness</option>
+                </select>
+            </div>
+            
+            <button class="btn" onclick="startInterview()">Start Skill Assessment</button>
+        </div>
+
+        <!-- Loading -->
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Preparing your skill assessment questions...</p>
+        </div>
+
+        <!-- Question Section -->
+        <div class="question-section" id="questionSection">
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            
+            <div class="question-card" id="questionCard">
+                <div class="question-header">
+                    <span class="question-number" id="questionNumber">Question 1</span>
+                    <span class="skill-tag" id="skillTag">Skill Assessment</span>
+                </div>
+                <div class="question-text" id="questionText">
+                    Your question will appear here...
+                </div>
+                <textarea id="responseText" placeholder="Type your response here..."></textarea>
+                <div class="evaluation-feedback hidden" id="evaluationFeedback">
+                    <div class="feedback-score" id="feedbackScore"></div>
+                    <div class="feedback-text" id="feedbackText"></div>
+                </div>
+            </div>
+            
+            <div style="text-align: center; margin-top: 20px;">
+                <button class="btn" id="submitBtn" onclick="submitResponse()">Submit Response</button>
+                <button class="btn" id="nextBtn" onclick="nextQuestion()" style="display: none;">Next Question</button>
+                <button class="btn" id="viewResultsBtn" onclick="viewResults()" style="display: none;">View Results</button>
+            </div>
+        </div>
+
+        <!-- Results Section -->
+        <div class="results-section" id="resultsSection">
+            <h2>🎉 Assessment Complete!</h2>
+            
+            <div class="overall-score">
+                <h2>Overall Performance</h2>
+                <div class="score-display" id="overallScore">8.5</div>
+                <div class="stars" id="overallStars">
+                    ★★★★☆
+                </div>
+                <div id="performanceLevel">Great Job!</div>
+            </div>
+            
+            <div class="skill-ratings">
+                <h3>Individual Skill Ratings</h3>
+                <div class="skill-grid" id="skillRatingsGrid">
+                    <!-- Skill cards will be populated here -->
+                </div>
+            </div>
+            
+            <button class="btn" onclick="startNewInterview()" style="margin-top: 20px;">
+                Start New Assessment
+            </button>
+        </div>
+    </div>
+
+    <script>
+        let currentInterview = null;
+        let questions = [];
+        let currentQuestionIndex = 0;
+        let currentQuestionId = null;
+
+        function generateStars(rating) {
+            let stars = '';
+            for (let i = 1; i <= 5; i++) {
+                if (i <= rating) {
+                    stars += '<span class="star">★</span>';
+                } else {
+                    stars += '<span class="star empty">☆</span>';
+                }
+            }
+            return stars;
+        }
+
+        async function startInterview() {
+            const candidateName = document.getElementById('candidateName').value || 'Anonymous';
+            const skillsInput = document.getElementById('skillsInput').value || 'general skills';
+            const skillArea = document.getElementById('skillArea').value;
+            
+            console.log('Starting skill assessment with:', { candidateName, skillsInput, skillArea });
+            
+            // Show loading
+            document.getElementById('startSection').style.display = 'none';
+            document.getElementById('loading').style.display = 'block';
+            
+            try {
+                const response = await fetch('/api/interviews/start', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        candidate_name: candidateName,
+                        skills: skillsInput,
+                        skill_area: skillArea,
+                        questions_per_skill: 3
+                    })
+                });
+                
+                console.log('Response status:', response.status);
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('Server error:', errorText);
+                    throw new Error(`HTTP ${response.status}: ${errorText}`);
+                }
+                
+                const data = await response.json();
+                console.log('Response data:', data);
+                currentInterview = data.interview_id;
+                
+                // Load questions
+                await loadQuestions();
+                
+            } catch (error) {
+                console.error('Error starting interview:', error);
+                alert(`Failed to start assessment: ${error.message}`);
+                
+                // Reset UI
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('startSection').style.display = 'block';
+            }
+        }
+
+        async function loadQuestions() {
+            try {
+                console.log('Loading questions for interview:', currentInterview);
+                
+                const response = await fetch(`/api/interviews/${currentInterview}/questions`);
+                
+                console.log('Questions response status:', response.status);
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('Questions error:', errorText);
+                    throw new Error(`Failed to load questions: HTTP ${response.status}`);
+                }
+                
+                const data = await response.json();
+                console.log('Questions data:', data);
+                
+                questions = data.questions;
+                currentQuestionIndex = 0;
+                
+                if (!questions || questions.length === 0) {
+                    throw new Error('No questions received from server');
+                }
+                
+                // Hide loading and show questions
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('questionSection').style.display = 'block';
+                
+                displayCurrentQuestion();
+                
+            } catch (error) {
+                console.error('Error loading questions:', error);
+                alert(`Failed to load questions: ${error.message}`);
+                
+                // Reset to start
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('startSection').style.display = 'block';
+            }
+        }
+
+        function displayCurrentQuestion() {
+            if (currentQuestionIndex >= questions.length) {
+                viewResults();
+                return;
+            }
+            
+            const question = questions[currentQuestionIndex];
+            currentQuestionId = question.id;
+            
+            document.getElementById('questionNumber').textContent = `Question ${currentQuestionIndex + 1}`;
+            document.getElementById('skillTag').textContent = question.skill || 'General Skill';
+            document.getElementById('questionText').textContent = question.question;
+            document.getElementById('responseText').value = '';
+            
+            // Update progress
+            const progress = ((currentQuestionIndex) / questions.length) * 100;
+            document.getElementById('progressFill').style.width = progress + '%';
+            
+            // Reset buttons
+            const submitBtn = document.getElementById('submitBtn');
+            submitBtn.style.display = 'inline-block';
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Submit Response';
+            
+            document.getElementById('nextBtn').style.display = 'none';
+            document.getElementById('viewResultsBtn').style.display = 'none';
+            document.getElementById('evaluationFeedback').classList.add('hidden');
+        }
+
+        async function submitResponse() {
+            const response = document.getElementById('responseText').value.trim();
+            
+            if (!response) {
+                alert('Please provide a response before submitting.');
+                return;
+            }
+            
+            // Disable submit button
+            document.getElementById('submitBtn').disabled = true;
+            document.getElementById('submitBtn').textContent = 'Evaluating...';
+            
+            try {
+                const submitResponse = await fetch('/api/interviews/submit-response', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        question_id: currentQuestionId,
+                        response: response
+                    })
+                });
+                
+                if (!submitResponse.ok) {
+                    throw new Error(`HTTP ${submitResponse.status}: ${submitResponse.statusText}`);
+                }
+                
+                const data = await submitResponse.json();
+                
+                // Show simple evaluation feedback
+                showSimpleEvaluationFeedback(data.evaluation);
+                
+                // Update progress
+                const progress = ((currentQuestionIndex + 1) / questions.length) * 100;
+                document.getElementById('progressFill').style.width = progress + '%';
+                
+                // Show appropriate next button
+                if (data.interview_progress.completed) {
+                    document.getElementById('viewResultsBtn').style.display = 'inline-block';
+                } else {
+                    document.getElementById('nextBtn').style.display = 'inline-block';
+                }
+                
+                document.getElementById('submitBtn').style.display = 'none';
+                
+            } catch (error) {
+                console.error('Error submitting response:', error);
+                alert('Failed to submit response. Please try again.');
+                document.getElementById('submitBtn').disabled = false;
+                document.getElementById('submitBtn').textContent = 'Submit Response';
+            }
+        }
+
+        function showSimpleEvaluationFeedback(evaluation) {
+            const feedbackDiv = document.getElementById('evaluationFeedback');
+            const scoreDiv = document.getElementById('feedbackScore');
+            const textDiv = document.getElementById('feedbackText');
+            
+            scoreDiv.textContent = `Score: ${evaluation.score}/10`;
+            textDiv.textContent = 'Response evaluated successfully!';
+            
+            feedbackDiv.classList.remove('hidden');
+        }
+
+        function nextQuestion() {
+            currentQuestionIndex++;
+            displayCurrentQuestion();
+        }
+
+        async function viewResults() {
+            // Show loading
+            document.getElementById('questionSection').style.display = 'none';
+            document.getElementById('loading').style.display = 'block';
+            
+            try {
+                const response = await fetch(`/api/interviews/${currentInterview}/results`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                console.log('Results data:', data);
+                
+                // Hide loading and show results
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('resultsSection').style.display = 'block';
+                
+                // Display overall results
+                document.getElementById('overallScore').textContent = data.overall_score || '0';
+                document.getElementById('overallStars').innerHTML = generateStars(data.overall_stars || 1);
+                document.getElementById('performanceLevel').textContent = getPerformanceMessage(data.overall_stars || 1);
+                
+                // Display individual skill ratings
+                displaySkillRatings(data.skill_ratings || {});
+                
+            } catch (error) {
+                console.error('Error loading results:', error);
+                alert('Failed to load results. Please try again.');
+            }
+        }
+
+        function displaySkillRatings(skillRatings) {
+            const skillGrid = document.getElementById('skillRatingsGrid');
+            skillGrid.innerHTML = '';
+            
+            for (const [skillName, starRating] of Object.entries(skillRatings)) {
+                const skillCard = document.createElement('div');
+                skillCard.className = 'skill-card';
+                skillCard.innerHTML = `
+                    <div class="skill-name">${skillName}</div>
+                    <div class="skill-stars">${generateStars(starRating)}</div>
+                    <div class="skill-rating-text">${starRating}/5 Stars</div>
+                `;
+                skillGrid.appendChild(skillCard);
+            }
+        }
+
+        function getPerformanceMessage(stars) {
+            const messages = {
+                5: "Outstanding Performance! 🌟",
+                4: "Great Job! 👏",
+                3: "Good Work! 👍",
+                2: "Keep Practicing! 💪",
+                1: "Room for Improvement! 📚"
+            };
+            return messages[stars] || "Assessment Complete!";
+        }
+
+        function startNewInterview() {
+            // Reset everything
+            currentInterview = null;
+            questions = [];
+            currentQuestionIndex = 0;
+            currentQuestionId = null;
+            
+            // Show start section
+            document.getElementById('resultsSection').style.display = 'none';
+            document.getElementById('startSection').style.display = 'block';
+            
+            // Reset form
+            document.getElementById('candidateName').value = '';
+            document.getElementById('skillsInput').value = 'Python, Cooking, Public Speaking';
+            document.getElementById('skillArea').value = 'general';
+        }
+    </script>
+</body>
+</html>
+"""
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    create_tables()
+    yield
+    # Shutdown
+    pass
+
+# Create FastAPI app
+app = FastAPI(
+    title="Interview Assistant API",
+    description="Direct skill assessment through automated interviews",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # For development - restrict in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Include routers
+app.include_router(interviews_router, prefix="/api/interviews", tags=["Interviews"])
+
+@app.get("/", response_class=HTMLResponse)
+async def root():
+    """Serve the main interview page"""
+    return HTML_CONTENT
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {"status": "healthy"}
+
+# Run with uvicorn app:app --reload if running directly
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True) 
