@@ -20,7 +20,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Constants
-GROQ_API_KEY = "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"
+GROQ_API_KEY = os.getenv('GROQ_API_KEY')
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 # Available models
